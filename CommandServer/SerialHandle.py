@@ -8,6 +8,8 @@ class SerialHandle:
     def __init__(self,port):
         """
         构造函数
+
+        @param port: 串口号
         """
         self.ser = serial.Serial(
         port,              # number of device, numbering starts at

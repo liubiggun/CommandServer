@@ -32,7 +32,7 @@ class CmdProtocol(LineOnlyReceiver):
             if user is not None:
                 if self.greetDeferred is not None:
                     d, self.greetDeferred = self.greetDeferred, None
-                    d.callback(poem)
+                    d.callback(user)
                 self.check=True
             else:
                 self.transport.write("Invaild pin!\n")
@@ -67,7 +67,7 @@ class CmdService(object):
         """
         验证密码
         """
-
+        return "lyh"
        
     def setUser(self,user,transport):
         """
