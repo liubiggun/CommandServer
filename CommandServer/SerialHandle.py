@@ -19,13 +19,7 @@ class SerialHandle:
         # if no port is specified an unconfigured
         # an closed serial port object is created
         baudrate=115200,        # baud rate
-        bytesize=EIGHTBITS,     # number of databits
-        parity=PARITY_NONE,     # enable parity checking
-        stopbits=STOPBITS_ONE,  # number of stopbits
         timeout=15,             # set a timeout value, None for waiting forever
-        xonxoff=0,              # enable software flow control
-        rtscts=0,               # enable RTS/CTS flow control
-        interCharTimeout=None   # Inter-character timeout, None to disable
         )
 
     def SendCmd(self,line):

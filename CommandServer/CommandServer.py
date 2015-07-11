@@ -8,7 +8,7 @@ class CmdProtocol(LineOnlyReceiver):
     """
     本应用的命令行协议
     """
-    delimiter=Command.EndByte 
+    delimiter=Command.EndStr 
     def __init__(self):
         self.deferred=None
         self.greetDeferred=None
@@ -27,7 +27,7 @@ class CmdProtocol(LineOnlyReceiver):
         """
         if self.check:
             d = self.factory.service.Command("ExecuteCmds",line)
-            d.addCallback(lambda r : self.transport.write(r))#Command命令在工作者线程池中处理完毕后调用
+            d.addCallback(lambda : self.transport.write("Command"))#Command命令在工作者线程池中处理完毕后调用
         else:#密码验证
             user=self.factory.service.checkUser(line)
             if user is not None:
@@ -76,6 +76,7 @@ class CmdService(object):
         设置获取此服务的user
         """    
         self.user=user
+        return user
         
     def getUser(self,transport):
         """
@@ -102,10 +103,11 @@ class CmdService(object):
         if thunk is None: # 没有这个服务
             return None
 
-        try:
-            return thunk(cmdline)
-        except:
-            return None 
+        thunk(cmdline)
+        #try:
+        #    return thunk(cmdline)
+        #except:
+        #    return None 
 
     def xform_FetchImage(self,cmdline):
         """
