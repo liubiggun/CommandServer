@@ -27,7 +27,7 @@ class CmdProtocol(LineOnlyReceiver):
         """
         if self.check:
             d = self.factory.service.Command("ExecuteCmds",line)
-            d.addCallback(lambda : self.transport.write("Command"))#Command命令在工作者线程池中处理完毕后调用
+            d.addCallback(lambda returnStr: self.transport.write("Return:%s" % returnStr))#Command命令在工作者线程池中处理完毕后调用
         else:#密码验证
             user=self.factory.service.checkUser(line)
             if user is not None:
@@ -103,7 +103,7 @@ class CmdService(object):
         if thunk is None: # 没有这个服务
             return None
 
-        thunk(cmdline)
+        return thunk(cmdline)
         #try:
         #    return thunk(cmdline)
         #except:
@@ -120,7 +120,7 @@ class CmdService(object):
         执行命令服务
         """
         cmd=Command.Command(cmdline)
-        cmd.Execute()
+        
         return threads.deferToThread(cmd.Execute)
 
 def RunServer(port):

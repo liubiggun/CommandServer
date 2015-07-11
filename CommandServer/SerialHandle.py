@@ -28,16 +28,18 @@ class SerialHandle:
         """
         if self.ser.isOpen():
             self.ser.write(line)
+            print "Send to arduino:%s (len:%d)" % (line,len(line))
 
     def CheckReturn(self):
         """
         检查下位机返回数据
         """
-        while self.ser.inWaiting()==0:
-            pass
-        rs=self.ser.readline(1,'\r\n')
+        rs=None
+        
+        #while self.ser.inWaiting()==0:
+        #    pass
+        #rs=self.ser.readline(1,'\r\n')
         #获取满足协议的结果
-
 
         return rs
 

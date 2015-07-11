@@ -26,18 +26,16 @@ def GetType(line):
 
     if ord(dataLen)!=len(dataVal):#检查栈长度是否正确
         return ['\x00',0,None]
-    
-    if line[-1]!=char_checksum(typeNum+dataLen+dataVal):#检查检验和
+
+    if ord(line[-1])!=char_checksum(dataLen+typeNum+dataVal):#检查检验和
         return ['\x00',0,None]
 
     return (typeNum,dataLen,dataVal)
 
 def char_checksum(data,littleEndian=True):
     """
-    实际计算校验和时，解释为无符号整数还是带符号整数，结果必然是一样的。因为基于补码方式存储，计算加法时都是按位加，然后该进位的就进位。
-    只是最终的结果，如果是带符号整数，最高位会被解释符号位
+    计算校验和(数据字符串中每个字符转换成有符号字节进行求和，运算过程中按有符号字节存储，结果返回相应的无符号字节表示)
 
-    char_checksum 按字节计算补码校验和。每个字节被翻译为带符号整数
     @param data: 字节串
     @param byteorder: 大/小端
     """
@@ -57,30 +55,9 @@ def char_checksum(data,littleEndian=True):
             checksum = (checksum & 0x7F) - 0x80 #取补码就是对应的负数值(或者checksum-256钟摆原理)
         
         if checksum < -0x80: # 下溢出
-            checksum &= 0x7F #(或者checksum+256钟摆原理)
-        
-        #print(checksum)
+            checksum &= 0x7F #(或者checksum+256钟摆原理)              
     
-    return checksum   
-
-def uchar_checksum(data,littleEndian=True):
-    """
-    char_checksum 按字节计算补码校验和。每个字节被翻译为无符号整数
-    @param data: 字节串
-    @param byteorder: 大/小端
-    """
-    length = len(data)
-    checksum = 0
-    for i in range(0, length):
-        if(littleEndian):
-            x=struct.unpack('<B',data[i:i+1])
-        else:
-            x=struct.unpack('>B',data[i:i+1])
-
-        checksum += x
-        checksum &= 0xFF # 强制截断
-        
-    return checksum            
+    return checksum&0xff          
          
 
 class Command:
