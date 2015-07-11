@@ -19,7 +19,7 @@ class CmdProtocol(LineOnlyReceiver):
         连接建立时进行的初始化
         """
         self.greetDeferred = self.factory.service.getUser(self.transport)
-        self.greetDeferred.addCallback(lambda user : self.transport.write("Waiting your order,master %s!:\n" % user)
+        self.greetDeferred.addCallback(lambda user : self.transport.write("Waiting your order,master %s!:\n" % user))
 
     def lineReceived(self, line):
         """
