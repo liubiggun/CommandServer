@@ -1,6 +1,7 @@
 ﻿from twisted.internet import defer,threads
 from twisted.internet.protocol import Protocol,ServerFactory
 from twisted.protocols.basic import LineOnlyReceiver
+import sys
 import Command
 
 
@@ -64,6 +65,7 @@ class CmdService(object):
         self.port = port  
         self.user = None
         self.transport=None 
+        self.cmdHandler=Command.Command(sys.argv[1])
 
     def checkUser(self,line):
         """
@@ -119,9 +121,9 @@ class CmdService(object):
         """
         执行命令服务
         """
-        cmd=Command.Command(cmdline)
+        self.cmdHandler.GetType(cmdline)
         
-        return threads.deferToThread(cmd.Execute)
+        return threads.deferToThread(self.cmdHandler.Execute)
 
 def RunServer(port):
     service = CmdService(port)
