@@ -8,7 +8,7 @@ import SerialHandle
 """
 Head0=0x66
 Head1=0xaa
-EndByte=0xfc    #每一条命令的截止字节
+EndByte=chr(0xfc)    #每一条命令的截止字节
 
 def GetType(line):
     """

@@ -10,8 +10,8 @@ class CmdProtocol(LineOnlyReceiver):
     """
     delimiter=Command.EndByte 
     def __init__(self):
-        self.defer=None
-        self.greetDefer=None
+        self.deferred=None
+        self.greetDeferred=None
         self.check=False#是否已经验证身份   
     
     def connectionMade(self):
@@ -19,14 +19,15 @@ class CmdProtocol(LineOnlyReceiver):
         连接建立时进行的初始化
         """
         self.greetDeferred = self.factory.service.getUser(self.transport)
+        self.greetDeferred.addCallback(lambda user : self.transport.write("Waiting your order,master %s!:\n" % user)
 
     def lineReceived(self, line):
         """
         收到一条命令时
         """
         if self.check:
-            d = self.factory.Command(line)
-            d.addCallback(lambda : self.transport.write)#Command命令在工作者线程池中处理完毕后调用
+            d = self.factory.service.Command("ExecuteCmds",line)
+            d.addCallback(lambda r : self.transport.write(r))#Command命令在工作者线程池中处理完毕后调用
         else:#密码验证
             user=self.factory.service.checkUser(line)
             if user is not None:
@@ -57,11 +58,12 @@ class CmdService(object):
     命令服务，获取客户端发来的命令后执行命令，但是命令执行不一定立刻执行完毕，所以ExecuteCmds方法返回defered
     """
     CMD = None
-    Users = { "guest":"111111","lyh":"123456"}
+    Users = { "guest":"111111","lyh":"123456"}    
 
     def __init__(self, port):
         self.port = port  
-        self.user = None 
+        self.user = None
+        self.transport=None 
 
     def checkUser(self,line):
         """
@@ -69,11 +71,10 @@ class CmdService(object):
         """
         return "lyh"
        
-    def setUser(self,user,transport):
+    def setUser(self,user):
         """
         设置获取此服务的user
-        """   
-        transport.write("Waiting your order,master %s!:\n" % user) 
+        """    
         self.user=user
         
     def getUser(self,transport):
@@ -112,7 +113,7 @@ class CmdService(object):
         """
 
 
-    def xform_ExcuteCmds(self,cmdline):
+    def xform_ExecuteCmds(self,cmdline):
         """
         执行命令服务
         """
@@ -123,7 +124,7 @@ class CmdService(object):
 def RunServer(port):
     service = CmdService(port)
     factory = CmdFactory(service)
-
+    
     from twisted.internet import reactor
     port = reactor.listenTCP(port, factory)
 
