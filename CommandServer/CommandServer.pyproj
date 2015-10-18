@@ -25,6 +25,9 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="CaptureFromCAM.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="Command.py">
       <SubType>Code</SubType>
     </Compile>

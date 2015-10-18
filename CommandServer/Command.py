@@ -1,25 +1,28 @@
-﻿import struct
+﻿"""
+命令解析与命令发送给下位机模块，控制小车只能有一个客户端，其他客户端只能获取图像
+
+当前命令有：
+命令格式
+头             栈长度     命令字   数据          校验和      结束字节   意义
+0x66  0xaa     0x01      0x01     "0"            0x##      0xfc      获取超声波测距的结果，数据：超声波模块索引
+0x66  0xaa     0x08      0x02     "+100-100"     0x##      0xfc      设置电机速度，数据：两个电机速度(0~255)，+-表示正反转
+
+0x66  0xaa     0x01      0xff     "0"            0x##      0xfc      获取图像数据，0是获取双目数据，1是左边摄像头，2则右边
+"""
+
+import struct
 import SerialHandle
 
-"""
-命令格式
-头              栈长度       命令字        数据          校验和
-0x66 0xaa       0x08         0x01         "+100-100"    0xfc
-"""
 Head0=0x66
 Head1=0xaa
-EndStr=chr(0xfc)    #每一条命令的截止字节         
-         
+EndStr=chr(0xfc)    #每一条命令的截止字节                  
 
 class Command:
     """
-    命令类
-    """       
-
-    def __init__(self,comport):
-        """
-        
-        """   
+    命令类。comport：串口设备，这里需要在管理连接协议时判断用户户为master时才可以发送命令给下位机
+    """  
+         
+    def __init__(self,comport):  
         self.dataLen=None     
         self.typeNum=None      
         self.dataVal=None
@@ -31,17 +34,17 @@ class Command:
         获取命令的类型，检查检验和(栈长度+命令字+数据)
         @param line: 命令行
 
-        return: (typeNum,dataLen,dataVal):(命令类型，数据长度，数据)
+        return: 返回是否解析为已知命令
         """
         if line[0:2]!=b'\x66\xaa':#检查命令头
-            return ['\x00',0,None]
+            self.typeNum='\x00'
 
         self.dataLen=line[2]
         self.typeNum=line[3]        
         self.dataVal=line[4:-1]       
 
         if ord(self.dataLen)!=len(self.dataVal):#检查栈长度是否正确
-            return ['\x00',0,None]
+            self.typeNum='\x00'
         def char_checksum(data,littleEndian=True):
             """
             计算校验和(数据字符串中每个字符转换成有符号字节进行求和，运算过程中按有符号字节存储，结果返回相应的无符号字节表示)
@@ -70,39 +73,31 @@ class Command:
             return checksum&0xff 
 
         if ord(line[-1])!=char_checksum(line[2:-1]):#检查检验和
-            return ['\x00',0,None]
+            self.typeNum='\x00'
 
         self.cmdLine=line+EndStr  #服务器接收得到的line将取出EndByte，发向串口时应该加上   
 
+        return True if self.typeNum!='\x00' else False
 
     def Execute(self):
         """
-        执行命令
+        执行命令，并返回下位机的执行后应答，若返回''，则向客户端发送'I don't undertand your order'
         """
-        Cmds={'\x00':self.VaildCmd,'\x01':self.GetDist,'\x02':self.MotorCtl}      
-
-        #发送命令行给下位机
-        if self.typeNum != '\x00':
-            self.serHandle.SendCmd(self.cmdLine)
-        #执行其他动作
+        Cmds={'\x00':self.VaildCmd,'\x01':self.Send2Controler,'\x02':self.Send2Controler}      
+       
         Cmds[self.typeNum]()
-        return self.serHandle.CheckReturn()
 
     def VaildCmd(self):
         """
         无效命令
         """
-        pass
+        return ''
 
-    def GetDist(self):
+    def Send2Controler(self):
         """
-        向下位机发送串口控制命令，获取超声波测距的结果
-        """       
-
-    def MotorCtl(self):
-        """
-        向下位机发送串口控制命令，控制电机
-        """      
-    
+        向下位机发送串口控制命令
+        """  
+        self.serHandle.SendCmd(self.cmdLine)  
+        return self.serHandle.CheckReturn() 
 
     

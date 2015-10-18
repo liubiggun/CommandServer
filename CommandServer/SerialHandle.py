@@ -19,7 +19,7 @@ class SerialHandle:
         # if no port is specified an unconfigured
         # an closed serial port object is created
         baudrate=115200,        # baud rate
-        timeout=15,             # set a timeout value, None for waiting forever
+        timeout=5,             # set a timeout value, None for waiting forever
         )
 
     def SendCmd(self,line):
@@ -32,14 +32,9 @@ class SerialHandle:
 
     def CheckReturn(self):
         """
-        检查下位机返回数据
-        """
-        rs=None
-        
-        #while self.ser.inWaiting()==0:
-        #    pass
-        #rs=self.ser.readline(1,'\r\n')
-        #获取满足协议的结果
+        线程中等待下位机返回数据，返回若是''空字符串，说明下位机没有正确响应命令
+        """              
+        rs=self.ser.readline()
 
         return rs
 
