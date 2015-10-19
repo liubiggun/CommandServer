@@ -28,7 +28,7 @@ class SerialHandle:
         """
         if self.ser.isOpen():
             self.ser.write(line)
-            print "Send to arduino:%s (len:%d)" % (line,len(line))
+            print "Send to arduino : %s (len:%d)" % (line,len(line))
 
     def CheckReturn(self):
         """

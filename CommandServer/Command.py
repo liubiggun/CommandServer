@@ -7,7 +7,9 @@
 0x66  0xaa     0x01      0x01     "0"            0x##      0xfc      获取超声波测距的结果，数据：超声波模块索引
 0x66  0xaa     0x08      0x02     "+100-100"     0x##      0xfc      设置电机速度，数据：两个电机速度(0~255)，+-表示正反转
 
-0x66  0xaa     0x01      0xff     "0"            0x##      0xfc      获取图像数据，0是获取双目数据，1是左边摄像头，2则右边
+0x66  0xaa     0x01      0x7f     "0"            0x##      0xfc      控制获取图像数据，^打开图像传输，$关闭图像传输，
+                                                                     0是获取双目数据，1是左边摄像头，2则右边
+                                                                     ？查询状态，服务器返回客户端0 1 2 或 $
 """
 
 import struct
@@ -23,10 +25,11 @@ class Command:
     """  
          
     def __init__(self,comport):  
-        self.dataLen=None     
-        self.typeNum=None      
-        self.dataVal=None
-        self.cmdLine=None
+        self.dataLen=None        #栈长度     
+        self.typeNum=None        #命令字
+        self.dataVal=None        #数据
+        self.dataParts=[]        #数据中若有;号，说明分为几个部分，在协议中需要用到
+        self.cmdLine=None        #完成的命令行
         self.serHandle=SerialHandle.SerialHandle(comport)
   
     def GetType(self,line):
@@ -36,8 +39,10 @@ class Command:
 
         return: 返回是否解析为已知命令
         """
+        self.dataParts=[]
         if line[0:2]!=b'\x66\xaa':#检查命令头
             self.typeNum='\x00'
+            return False
 
         self.dataLen=line[2]
         self.typeNum=line[3]        
@@ -45,6 +50,8 @@ class Command:
 
         if ord(self.dataLen)!=len(self.dataVal):#检查栈长度是否正确
             self.typeNum='\x00'
+            return False
+
         def char_checksum(data,littleEndian=True):
             """
             计算校验和(数据字符串中每个字符转换成有符号字节进行求和，运算过程中按有符号字节存储，结果返回相应的无符号字节表示)
@@ -74,10 +81,13 @@ class Command:
 
         if ord(line[-1])!=char_checksum(line[2:-1]):#检查检验和
             self.typeNum='\x00'
+            return False
 
+        if self.dataVal.find(';') > -1:
+            self.dataParts.extend(self.dataVal.split(';'))
         self.cmdLine=line+EndStr  #服务器接收得到的line将取出EndByte，发向串口时应该加上   
 
-        return True if self.typeNum!='\x00' else False
+        return True
 
     def Execute(self):
         """
@@ -85,7 +95,7 @@ class Command:
         """
         Cmds={'\x00':self.VaildCmd,'\x01':self.Send2Controler,'\x02':self.Send2Controler}      
        
-        Cmds[self.typeNum]()
+        return Cmds[self.typeNum]()
 
     def VaildCmd(self):
         """

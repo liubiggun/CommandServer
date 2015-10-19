@@ -13,7 +13,8 @@
     <Name>CommandServer</Name>
     <RootNamespace>CommandServer</RootNamespace>
     <LaunchProvider>Standard Python launcher</LaunchProvider>
-    <CommandLineArguments>COM4</CommandLineArguments>
+    <CommandLineArguments>
+    </CommandLineArguments>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
@@ -32,7 +33,13 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="CommandServer.py" />
+    <Compile Include="ImgSender.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="SerialHandle.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="test.py">
       <SubType>Code</SubType>
     </Compile>
   </ItemGroup>
