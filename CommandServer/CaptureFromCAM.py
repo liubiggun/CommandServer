@@ -12,13 +12,11 @@ class CvCapture:
 
         self.size = size
         self.setWH(size[0],size[1])
-        self.fps = fps
+        self.fps = fps       
+        
+        #self.window1 = 'show1'
+        #self.window0 = 'show0'
 
-        self.window1 = 'show1'
-        self.window0 = 'show0'
-        cv2.namedWindow(self.window1)
-        cv2.namedWindow(self.window0)
-      
     def setFPS(self,value):
         """
         设置帧数
@@ -43,23 +41,29 @@ class CvCapture:
         self.capture0.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH,width)
         self.capture0.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT,height)
 
-        self.size = (width,height)
-        
+        self.size = (width,height)       
     
-    def run(self):
+    def show(self):
         """
-        开始捕捉图片
+        开始捕捉图片，esc退出循环
         """
+        #cv2.namedWindow(self.window1)
+        #cv2.namedWindow(self.window0) 
         waittime = 1000 // self.fps
-        while self.capture1.isOpened() & self.capture0.isOpened():
-            frame1 = self.capture1.read()[1]
-            frame0 = self.capture0.read()[1]
+        if self.capture1.isOpened() & self.capture0.isOpened():
+            rs1,frame1 = self.capture1.read()
+            rs0,frame0 = self.capture0.read()
+            while rs1 & rs0:
     
-            cv2.imshow(self.window1,frame1)
-            cv2.imshow(self.window0,frame0)
+                cv2.imshow('show1',frame1)
+                cv2.imshow('show0',frame0)
+
+                rs1,frame1 = self.capture1.read()
+                rs0,frame0 = self.capture0.read()
     
-            if cv2.waitKey(waittime) == 27:
-                self.clean()
+                if cv2.waitKey(waittime) == 27:
+                    self.clean()
+                    break   
 
     def clean(self):
         """
@@ -71,5 +75,5 @@ class CvCapture:
 
 if __name__ == '__main__':
     cap = CvCapture(size=(640,480),fps=30)
-    cap.run()
+    cap.show()
 

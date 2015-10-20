@@ -2,86 +2,140 @@
 CommandServer spawn出来的子进程，用来发送摄像头图片给客户端
 """
 
-from twisted.internet import defer,threads
-from twisted.internet.protocol import Protocol,DatagramProtocol
-from twisted.protocols.basic import FileSender
-from twisted.internet.stdio import StandardIO
+import socket
 from CaptureFromCAM import CvCapture
 import sys
 import time
+import thread
+import cv2
+import numpy
 
-class ImgSendProtocol(DatagramProtocol):
+
+
+class ImgSender(CvCapture):
     """
-    发送UDP数据包协议
+    发送图像类，在一个子进程调用它，并且该进程的标准输入输出被重定向到管道，与主进程的某个管道连接
+    所以使用input和print与主进程进行通信
     """
-    def __init__(self,host,port):
-        self.host=host
-        self.port=port
+    def __init__(self,host,port,size=(320,240),fps=30):
+        CvCapture.__init__(self, size, fps)
+        self.exit = False                                                 #是否停止获取图像
+        self.host = host
+        self.port = int(port)
+        self.mode = '0'                                                   #默认发送模式为0（双目）
+        self.order = None                                                 #当前父进程要本子进程执行的命令
+        self.mutex = thread.allocate_lock()                                 #锁
 
-    def startProtocol(self):
-        self.transport.connect(self.host, self.port)             #固定连接的UDP，现在只能发送数据包给指定的地址
-
-        self.transport.write("hello") # no need for address
-
-    def datagramReceived(self, data, (host, port)):
-        print "received %r from %s:%d" % (data, host, port)
-
-    # Possibly invoked if there is no server listening on the
-    # address to which we are sending.
-    def connectionRefused(self):
-        print "No one listening"              
-
-
-class ImgSender(FileSender):
-    def __init__(self):
+        self.socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)    #连接要接收图像的客户端的端口
+        
+    def startGetOrder(self):
         """
+        启动一个线程获取主进程的order
         """
-        self.cap=CvCapture(size=(320,240),fps=10)
+        def getOrder():#生产者
+            while 1:
+                rs = input()
+                with self.mutex:
+                    self.order = rs
+        thread.start_new_thread(getOrder)
 
-    def makeFile(self):
+    def startSendFrame(self,show=False):
         """
-        生成要传输的文件
+        获取视频帧,show:是否弹出窗体显示,flag:获取模式，0 双目 1 左边 2 右边
+        启动时需要两个摄像头能够打开
         """
+        waittime = 1000 // self.fps
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY),90]       #视频编码参数
 
-    def beginFileTransfer(self, file, consumer, transform = None):
-        """
-        开始传输文件
+        def ifsuceeded(rs1,rs0):                                #判断获取图像是否成功
+            if self.mode == '0':
+                return rs1 & rs0
+            elif self.mode == '1':
+                return rs1
+            elif self.mode == '2':
+                return rs0
 
-        @type file: Any file-like object
-        @param file: The file object to read data from
+        def sendframe(frame):                                                   #发送一帧图像
+            result, imgencode = cv2.imencode('.jpg', frame, encode_param)       #编码图像
+            data = numpy.array(imgencode)
+            stringData = data.tostring()                                        #转换为二进制字符串发送
+            stringLenData = str(len(stringData)).ljust(16)
+            self.socket.send(stringLenData)                                     #先发送16字节的长度用来给接收端识别图片大小
+            self.socket.send(stringData)                                        #再发送图像数据
 
-        @type consumer: Any implementor of IConsumer
-        @param consumer: The object to write data to
+        try:
+            self.socket.connect((self.host,self.port))
+        except socket.error:           
+            sys.stdout.write('Socket error')
+            return
+        if self.capture1.isOpened() & self.capture0.isOpened():
+            rs1,frame1 = self.capture1.read()
+            rs0,frame0 = self.capture0.read()            
 
-        @param transform: A callable taking one string argument and returning
-        the same.  All bytes read from the file are passed through this before
-        being written to the consumer.
+            order = None                                                    #查看子线程所获取的命令
+            #该进程实际工作
+            while ifsuceeded(rs1,rs0):
+                if show:                                                    #显示
+                    cv2.imshow('show1',frame1)
+                    cv2.imshow('show0',frame0)                           
+                
+                with self.mutex:
+                    if self.order != None:                                  
+                        order, self.order = self.order, None                #清空self.order
+                if order is not None:
+                    if order == 'stop':                                     #退出命令
+                        sys.stdout.write('Normal exit')                     #告诉父进程本子进程正常退出
+                        break    
+                    elif order[:3] == 'mode':                               #改变模式命令 
+                        self.mode = order[6] 
+                    
+                #发送图像
+                if self.mode == '0':
+                    sendframe(frame1)
+                    sendframe(frame0)
+                elif self.mode == '1':
+                    sendframe(frame1)
+                elif self.mode == '2':
+                    sendframe(frame0)
 
-        @rtype: C{Deferred}
-        @return: A deferred whose callback will be invoked when the file has
-        been completely written to the consumer. The last byte written to the
-        consumer is passed to the callback.
-        """
-        return super(ImgSender, self).beginFileTransfer(file, consumer, transform)
+                #获取下一帧
+                rs1,frame1 = self.capture1.read()
+                rs0,frame0 = self.capture0.read()
 
-    def resumeProducing(self):
-        return super(ImgSender, self).resumeProducing()
+                #帧数控制
+                cv2.waitKey(waittime)
+            else:#获取下一帧得到的图像为空则跳出循环，执行到这里，执行break才是正常退出，否则退出异常
+                sys.stdout.write('Capture error')          #获取图像失败，告诉父进程
+        sys.stdout.write('Capture error')                  #打开摄像头失败，告诉父进程
+        self.clean()                                       #循环结束后清理工作
 
-    def pauseProducing(self):
-        return super(ImgSender, self).pauseProducing()
+def testCVEncode():   
+    
+    capture = cv2.VideoCapture(0)
+    ret, frame = capture.read()   
+    encode_param=[int(cv2.IMWRITE_JPEG_QUALITY),90]
 
-    def stopProducing(self):
-        return super(ImgSender, self).stopProducing()
+    while ret:
+        result, imgencode = cv2.imencode('.jpg', frame, encode_param)   #编码
+        data = numpy.array(imgencode)
+        stringData = data.tostring()
+        stringlen = str(len(stringData)).ljust(16)
+                
+        decimg=cv2.imdecode(data,1)                                     #解码
+        cv2.imshow('CLIENT',decimg)
+
+        ret, frame = capture.read()
+        cv2.waitKey(10)
+    sock.close()
+    cv2.destroyAllWindows()
+
 
 def run():                                               
-    host=sys.argv[1]
-    port=sys.argv[2]
-    print('Now spawn process is sending Images to {0}:{1}!'.format(host,port))
-
-    from twisted.internet import reactor
-    reactor.listenUDP(0, ImgSendProtocol(host,port))
-    time.sleep(5)
-    reactor.run()
+    host = sys.argv[1] if len(sys.argv)==2 else '127.0.0.1'
+    port = sys.argv[2] if len(sys.argv)==2 else '36888'
+    #print('Now spawn process is sending Images to {0}:{1}!'.format(host,port))
+    imgsender = ImgSender(host,port)
+    imgsender.startSendFrame(False)
     
 if __name__ == '__main__':    
     run()
