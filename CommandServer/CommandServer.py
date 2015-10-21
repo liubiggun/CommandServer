@@ -1,7 +1,12 @@
 ﻿"""
 twisted框架的小车命令服务器，协议使用LineOnlyReceiver，一个TCP端口监听客户端传来的命令，
-本进程作为主进程，子进程是图片传输进程，设这里子进程最多可以有n个，则guess用户最大个数设置
-为n。本进程的管道与子进程的标准输入输出相连接，以达到控制子进程的目的
+本进程作为主进程，子进程是图片传输进程。本进程的管道与子进程的标准输入输出相连接，以达到控
+制子进程的目的。
+子进程会立即连接客户端接收的端口，所以客户端应保证该端口处于监听状态
+
+此处限制了guess用户数量，设子进程最多可以有n个，则guess用户最大个数设置为n，guess用户可以
+获得图像但不能控制小车（未实现，当前使用TCP传播图片，只能满足一个客户端的图片请求，用组播
+可实现...）
 """
 
 from twisted.internet import defer,threads
@@ -9,8 +14,17 @@ from twisted.internet.protocol import Protocol,ServerFactory,ProcessProtocol
 from twisted.protocols.basic import LineOnlyReceiver,FileSender
 import sys
 import Command
+import logging
+import logging.config
 from CaptureFromCAM import CvCapture
 
+logging.config.fileConfig('mainlog.conf')  
+logger = logging.getLogger('main')
+
+lineprint = '\n' + '-' * 60 + '\n'
+
+def crucialprint(str):
+    print(lineprint + str + lineprint[:-1])
 
 class CmdProtocol(LineOnlyReceiver):
     """
@@ -34,7 +48,8 @@ class CmdProtocol(LineOnlyReceiver):
         """
         连接建立时进行的初始化
         """
-        print('{0.host}:{0.port} connecting. Whether I have master:{1}'.format(self.transport.getPeer(),self.hasmaster))
+        crucialprint('{0.host}:{0.port} connecting. Whether I have master:{1}'.format(
+            self.transport.getPeer(),CmdProtocol.hasmaster))
 
         self.transport.write("Welcome,friend!Now check pin:")                                #请客户端登陆
         
@@ -43,7 +58,7 @@ class CmdProtocol(LineOnlyReceiver):
         """
         收到一条命令时
         """
-        print('Receive from {0.host}:{0.port} : {1}'.format(self.transport.getPeer(),line))  #打印接收到的信息
+        print('Receive from {0}({1.host}:{1.port}) : {2}'.format(self.user,self.transport.getPeer(),line))  #打印接收到的信息
 
         if self.user is not None:                                                            #是否已经验证身份
             if self.factory.service.parseCmd(line):                                          #解析命令成功
@@ -65,8 +80,10 @@ class CmdProtocol(LineOnlyReceiver):
             if self.user == 'master':   #用户是master才可以发送给下位机
                 d = self.factory.service.runService("ExecuteCmds")
                 #注册Command命令在工作者线程池中处理完毕后调用的回调
-                d.addCallback(lambda returnStr: self.transport.write("Return:%s" % returnStr) if returnStr else 
-                                self.transport.write("My legs had something wrong = =!"))
+                
+                d.addCallbacks(lambda returnStr: self.transport.write("Return:%s" % returnStr) if returnStr else 
+                                self.transport.write("My legs had something wrong = =!"),
+                                lambda returnStr: sys.stdout.write('Arduino is no response.\n'))
             else:
                 self.transport.write('No permission!')
 
@@ -78,11 +95,12 @@ class CmdProtocol(LineOnlyReceiver):
             if dataparts[1] == '?':                                                    #数据为?说明查询当前传输图像子进程状态
                 self.transport.write(self.subprocessProtocol.flag)
 
-            elif dataparts[1] == '^':                                                  #数据为^说明启动子进程
+            elif dataparts[1] in ['^','&','*']:                                        #数据为^说明启动子进程
                 if self.subprocessProtocol.flag == '$':                                #当前没有传输子进程才可以启动
-                    self.subprocessProtocol = ImgProtocol(self.transport.getPeer().host,self.user,'0')
+                    mode = str(['^','&','*'].index(dataparts[1]))
+                    self.subprocessProtocol = ImgProtocol(self.transport.getPeer().host,dataparts[0],self.user,mode)
                     self.factory.service.runService("SpawnImgSender",self.subprocessProtocol,
-                                    self.transport.getPeer().host,dataparts[0])  
+                                    self.transport.getPeer().host,dataparts[0],mode)
                 else:
                     self.transport.write('Spawn process Exist!')  
                                     
@@ -95,7 +113,8 @@ class CmdProtocol(LineOnlyReceiver):
             elif dataparts[1] in ['0','1','2']:                                        #数据为0 1 2说明改变获取图像flag
                 if self.subprocessProtocol.flag != '$':
                     if self.subprocessProtocol.flag != dataparts[1]:                   #不同才需要更改模式
-                        print('Change mode of process which connect to {0}:{1} to : {3}'.format(self.transport.getPeer().host,dataparts[1]))              
+                        crucialprint('Change mode of spawn process which connect to {0.host}:{0.port} to : {1}'.format(
+                            self.transport.getPeer(),dataparts[1]))              
                         self.factory.service.runService("ConfigImgSender",self.subprocessProtocol,dataparts[1])
                     else:
                         self.transport.write('Nothing change!')
@@ -117,13 +136,13 @@ class CmdProtocol(LineOnlyReceiver):
             验证密码，这里简单的验证是否为'master.123456','guess.111111'，第一个是用户名
             第二个是密码
             """             
-            if line == self.Users['master']:                   #如果登陆的是master
-                if self.hasmaster:                             #若当前已经有master登陆，不允许登陆
+            if line == CmdProtocol.Users['master']:            #如果登陆的是master
+                if CmdProtocol.hasmaster:                      #若当前已经有master登陆，不允许登陆
                     return '2masters'
                 else :
                     return "master"
-            elif line == self.Users['guess']:
-                if self.guessnum == self.guessmax:             #若当前guess用户数量已达到上限，不允许登陆
+            elif line == CmdProtocol.Users['guess']:
+                if CmdProtocol.guessnum == CmdProtocol.guessmax:    #若当前guess用户数量已达到上限，不允许登陆
                     return 'guessmax'
                 else:
                     return 'guess'
@@ -135,15 +154,16 @@ class CmdProtocol(LineOnlyReceiver):
             设置获取此连接的user
             """         
             if user == 'master':   
-                self.hasmaster = True                                                  #设置hasmaster标记
+                CmdProtocol.hasmaster = True                                           #设置hasmaster标记
                 self.transport.write("Waiting your order,master")
             elif user == 'guess':
-                self.guessnum+=1                                                       #guess数量自增1
+                CmdProtocol.guessnum+=1                                                #guess数量自增1
                 self.transport.write('Friend,you can fetch images from me.')                            
             else:
                 self.transport.write('is Anything I can help you?%s' % self.user)
+            crucialprint('{0}({1.host}:{1.port}) has logged in.'.format(user,self.transport.getPeer()))
             self.user = user                                                           #客户端使用user登陆
-            self.subprocessProtocol = ImgProtocol(self.transport.getPeer().host,self.user,'$') 
+            self.subprocessProtocol = ImgProtocol(None,None,None,'$') 
 
         rs = checkUser(line)                                                           #验证登陆信息
         if rs is not None:
@@ -160,43 +180,44 @@ class CmdProtocol(LineOnlyReceiver):
         """
         丢失连接
         """
-        print('I lost connection from {0.host}:{0.port}.User:{1}'.format(self.transport.getPeer(),self.user))
+        crucialprint('I lost connection from {0.host}:{0.port}.User:{1}'.format(self.transport.getPeer(),self.user))
         
         if self.deferred is not None:
             deferred, self.deferred = self.deferred, None
             deferred.cancel()                                                           #服务取消
 
-        if self.subprocessProtocol.flag != '$':
+        if self.subprocessProtocol and self.subprocessProtocol.flag != '$':
             self.subprocessProtocol.orderExit()                                         #命令子进程退出
 
-        if self.hasmaster and self.user == 'master':       #若本次连接登陆的是master，退出时清空hasmaster标记
-            self.hasmaster = False
+        if CmdProtocol.hasmaster and self.user == 'master':       #若本次连接登陆的是master，退出时清空hasmaster标记
+            CmdProtocol.hasmaster = False
 
 
 class ImgProtocol(ProcessProtocol):
     """
     与子进程ImgSender的通信协议
     """
-    exitMode={'Normal exit':0, 'Socket error':1, 'Capture error':2}
+    exitMode=['Normal exit', 'Socket error', 'Send error', 'Capture error']
 
-    def __init__(self, host, user, flag):
+    def __init__(self, host, port, user, flag):
         self.host = host
+        self.port = port
         self.user = user
         self.flag = flag
-        self.exitstatus = None
+        self.exitstatus = 'Normal exit'
 
     def connectionMade(self):
         """
         子进程与本进程建立通信时的初始化
         """   
-        print('Spawn process for {0} (user:{1}) has started!'.format(self.host,self.user))
+        crucialprint('Spawn process for {0}:{1} (user:{2}) has started!'.format(self.host,self.port,self.user))
 
     def changeMode(self, flag):
         """
         命令子进程改变传输模式
         """           
         self.flag = flag
-        self.transport.write('mode:{}'.format(flag))
+        self.transport.write('mode:{0}'.format(flag))
 
     def orderExit(self):
         """
@@ -208,8 +229,9 @@ class ImgProtocol(ProcessProtocol):
         """
         接收到子进程的标准输出，根据其输出，改变子进程退出状态
         """
-        print('child send: ' + data)
-        self.exitstatus = self.exitMode[data]
+        crucialprint('Spawn process send: {0}'.format(data))
+        if data in ImgProtocol.exitMode:
+            self.exitstatus = data
 
     def errReceived(self, data):
         """
@@ -220,12 +242,12 @@ class ImgProtocol(ProcessProtocol):
         """
         子进程结束时
         """
-        print('Spawn process for {0} (user:{1}) has exited : {2}!'.format(self.host, self.user, self.exitstatus))
+        crucialprint('Spawn process for {0}:{1} (user:{2}) has exited : {3}!'.format(self.host, self.port,
+                                                                                     self.user, self.exitstatus))
         self.flag = '$'#标志位结束标志
 
              
 class CmdFactory(ServerFactory):
-
     protocol = CmdProtocol                                                         
 
     def __init__(self, service):
@@ -272,12 +294,12 @@ class CmdService(object):
         #except:
         #    return None
     
-    def xform_SpawnImgSender(self, imgprotocol, host, port):
+    def xform_SpawnImgSender(self, imgprotocol, host, port, mode):
         """
         启动图像服务进程，spawn一个子进程专门处理发送图像给客户端host的port端口
         """        
         self.reactor.spawnProcess(imgprotocol, self.pypath, 
-                                  [self.pypath, 'ImgSender.py', host, port], {})    #启动子进程并建立与子进程的通信
+                                  [self.pypath, 'ImgSender.py', host, port, mode], {})    #启动子进程并建立与子进程的通信
 
     def xform_StopImgSender(self, imgprotocol):
         """
@@ -317,7 +339,7 @@ def RunServer(portnum):
         
     port = reactor.listenTCP(portnum, factory)                          #开始监听端口
     
-    print 'Start listenning on %s.' % (port.getHost(),)
+    print 'Start listenning on %s.\n\n' % (port.getHost(),)
 
     reactor.run()
 

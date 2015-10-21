@@ -27,8 +27,8 @@ class SerialHandle:
         发送命令行给下位机
         """
         if self.ser.isOpen():
-            self.ser.write(line)
-            print "Send to arduino : %s (len:%d)" % (line,len(line))
+            self.ser.write(line)  
+            print "Send to arduino : {0} (len:{1})\n".format(line,len(line))       
 
     def CheckReturn(self):
         """
