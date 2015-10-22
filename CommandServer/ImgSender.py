@@ -14,6 +14,8 @@ import logging.config
 
 logging.config.fileConfig('spawnlog.conf')
 logger = logging.getLogger('spawn') 
+debug = False
+
 
 def tellfather(str):
     """
@@ -112,14 +114,18 @@ class ImgSender(CvCapture):
         try:
             self.socket.connect((self.host,self.port))
         except socket.error: 
-            try:
-                self.socket.connect(('127.0.0.1',self.port))         #本地测试时获取得的是360无线WIFI的IP，被360档了
-            except socket.error:   
+            if debug:
                 try:
-                    self.socket.connect(('202.193.8.83',self.port))  #在小车连接电脑时，获取得的是360无线WIFI的IP，被360档了
-                except socket.error: 
-                    tellfather('Socket error')
-                    return
+                    self.socket.connect(('127.0.0.1',self.port))        #本地测试时获取得的是360无线WIFI的IP，被360档了
+                except socket.error:   
+                    try:
+                        self.socket.connect(('202.193.9.83',self.port)) #在小车连接电脑时，获取得的是360无线WIFI的IP，被360档了
+                    except socket.error: 
+                        tellfather('Socket error')
+                        return
+            else:
+                tellfather('Socket error')
+                return
 
         #第一帧
         rs1 = rs2 = False
