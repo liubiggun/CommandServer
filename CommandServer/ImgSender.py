@@ -73,7 +73,7 @@ class ImgSender(CvCapture):
                                                                 #因为获取图像时有些操作也消耗了时间
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY),90]       #视频编码参数
 
-        def ifsucceeded(rs1,rs0):                                #判断获取图像是否成功
+        def fetched(rs1,rs0):                                   #判断获取图像是否成功
             if self.mode == '0':
                 return rs1 & rs0
             elif self.mode == '1':
@@ -139,7 +139,7 @@ class ImgSender(CvCapture):
         #第一帧
         rs1 = rs2 = False
         frame1 = frame0 = None
-        try:
+        try:           
             if self.mode == '0':
                 self.width,self.height = 320,240
                 self.openCAM(1)
@@ -150,26 +150,38 @@ class ImgSender(CvCapture):
                 self.width,self.height = 640,480
                 self.openCAM(1)
                 rs1,frame1 = self.capture1.read()
-            elif self.mode == '2':
+            elif self.mode == '2':                
                 self.width,self.height = 640,480
                 self.openCAM(0)
-                rs0,frame0 = self.capture0.read() 
+                rs0,frame0 = self.capture0.read()                
             else:
                 self.mode = '2'
                 self.width,self.height = 640,480
                 self.openCAM(0)
-                rs0,frame0 = self.capture0.read()  
+                rs0,frame0 = self.capture0.read()                  
         except Exception:
                 tellfather('Capture error') 
+         
         
-        initsucceeded = ifsucceeded(rs1,rs0)
-        if initsucceeded:
+        #该函数执行于子进程时，使用ifsucceeded函数就死在这了，不懂什么情况
+        #所以只能不调用函数了
+        #succeeded = fetched(rs1,rs0)
+        #tellfather('run here {0}'.format(initsucceeded))
+        if self.mode == '0':
+            succeeded = rs1 & rs0
+        elif self.mode == '1':
+            succeeded = rs1
+        elif self.mode == '2':
+            succeeded = rs0
+
+        if succeeded:
             tellfather("Now I'm sending images to {0}:{1}.format(self.host,self.port)")
         else:
             tellfather("Sorry,I can't fetch image.")
 
         #该进程实际工作
-        while ifsucceeded(rs1,rs0):                                                        
+        #while fetched(rs1,rs0):
+        while succeeded:                                                        
             with self.mutex:
                 if self.order != None:                                  
                     order, self.order = self.order, None                    #消费self.order
@@ -196,6 +208,7 @@ class ImgSender(CvCapture):
 
                 rs1,frame1 = self.capture1.read()
                 rs0,frame0 = self.capture0.read()
+                succeeded = rs1 & rs0
                 cv2.waitKey(waittime/2)
             elif self.mode == '1':
                 if not sendframe(frame1): tellfather('Send error');break
@@ -203,6 +216,7 @@ class ImgSender(CvCapture):
                     cv2.imshow('CAM1',frame1)
 
                 rs1,frame1 = self.capture1.read()
+                succeeded = rs1
                 cv2.waitKey(waittime)
             elif self.mode == '2':
                 if not sendframe(frame0): tellfather('Send error');break
@@ -210,6 +224,7 @@ class ImgSender(CvCapture):
                     cv2.imshow('CAM0',frame0)
 
                 rs0,frame0 = self.capture0.read()
+                succeeded = rs0
                 cv2.waitKey(waittime)
 
         else:#获取下一帧得到的图像为空则跳出循环，执行到这里，执行break才是正常退出，否则退出异常
@@ -240,7 +255,7 @@ def testCVEncode():
 
 
 def run():                                                 
-    host = sys.argv[1] if len(sys.argv)==4 else '127.0.0.1'
+    host = sys.argv[1] if len(sys.argv)==4 else '172.28.32.1'
     port = sys.argv[2] if len(sys.argv)==4 else '36889'
     mode = sys.argv[3] if len(sys.argv)==4 else '2'   
 
