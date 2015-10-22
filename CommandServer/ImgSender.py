@@ -73,7 +73,7 @@ class ImgSender(CvCapture):
                                                                 #因为获取图像时有些操作也消耗了时间
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY),90]       #视频编码参数
 
-        def ifsuceeded(rs1,rs0):                                #判断获取图像是否成功
+        def ifsucceeded(rs1,rs0):                                #判断获取图像是否成功
             if self.mode == '0':
                 return rs1 & rs0
             elif self.mode == '1':
@@ -162,9 +162,14 @@ class ImgSender(CvCapture):
                 rs0,frame0 = self.capture0.read()     
             except Exception:
                 tellfather('Capture error')     
-
+        
+        initsucceeded = ifsucceeded(rs1,rs0)
+        if initsucceeded:
+            tellfather("Now I'm sending images to {0}:{1}.format(self.host,self.port)")
+        else:
+            tellfather("Sorry,I can't fetch image.")
         #该进程实际工作
-        while ifsuceeded(rs1,rs0):                                                        
+        while ifsucceeded(rs1,rs0):                                                        
             with self.mutex:
                 if self.order != None:                                  
                     order, self.order = self.order, None                    #消费self.order
