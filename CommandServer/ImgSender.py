@@ -100,10 +100,13 @@ class ImgSender(CvCapture):
                 stringLenData = str(len(stringData)).ljust(16)
                 self.socket.send(stringLenData)                                 #先发送16字节的长度用来给接收端识别图片大小
                 self.socket.send(stringData)                                    #再发送图像数据
+                if stringLenData < 1024:
+                    return False
+                else:
+                    return True
             except Exception:
                 return False
-            else:
-                return True
+
 
         #连接客户端的接收图片的端口
         try:
