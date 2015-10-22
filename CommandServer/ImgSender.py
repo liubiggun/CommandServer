@@ -68,9 +68,7 @@ class ImgSender(CvCapture):
     def startSendFrame(self,show=False):
         """
         获取视频帧,show:是否弹出窗体显示,flag:获取模式，0 双目 1 左边 2 右边
-        """
-        waittime = int(round(1000 // self.fps * 0.9))           #帧数控制时间，*0.9是为了大概减少一些时间，
-                                                                #因为获取图像时有些操作也消耗了时间
+        """        
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY),90]       #视频编码参数
 
         def fetched(rs1,rs0):                                   #判断获取图像是否成功
@@ -91,13 +89,16 @@ class ImgSender(CvCapture):
             self.clean()
             self.mode=mode
             if self.mode=='0':
+                self.fps = 10
                 self.width,self.height=320,240
                 self.openCAM(1)  
                 self.openCAM(0)               
             elif self.mode=='1':
+                self.fps = 30
                 self.width,self.height=640,480
                 self.openCAM(1)
             elif self.mode=='2':
+                self.fps = 30
                 self.width,self.height=640,480
                 self.openCAM(0)
             with self.mutex:
@@ -141,16 +142,19 @@ class ImgSender(CvCapture):
         frame1 = frame0 = None
         try:           
             if self.mode == '0':
+                self.fps = 10
                 self.width,self.height = 320,240
                 self.openCAM(1)
                 self.openCAM(0)        
                 rs1,frame1 = self.capture1.read()
                 rs0,frame0 = self.capture0.read() 
             elif self.mode == '1':
+                self.fps = 30
                 self.width,self.height = 640,480
                 self.openCAM(1)
                 rs1,frame1 = self.capture1.read()
-            elif self.mode == '2':                
+            elif self.mode == '2':   
+                self.fps = 30             
                 self.width,self.height = 640,480
                 self.openCAM(0)
                 rs0,frame0 = self.capture0.read()                
@@ -175,13 +179,15 @@ class ImgSender(CvCapture):
             succeeded = rs0
 
         if succeeded:
-            tellfather("Now I'm sending images to {0}:{1}.format(self.host,self.port)")
+            tellfather("Now I'm sending images to {0}:{1}".format(self.host,self.port))
         else:
             tellfather("Sorry,I can't fetch image.")
 
         #该进程实际工作
         #while fetched(rs1,rs0):
-        while succeeded:                                                        
+        while succeeded:  
+            waittime = int(round(1000 // self.fps * 0.9))   #帧数控制时间，*0.9是为了大概减少一些时间，
+                                                            #因为获取图像时有些操作也消耗了时间                                                      
             with self.mutex:
                 if self.order != None:                                  
                     order, self.order = self.order, None                    #消费self.order
