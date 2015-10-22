@@ -14,7 +14,16 @@ import logging.config
 
 logging.config.fileConfig('spawnlog.conf')
 logger = logging.getLogger('spawn') 
-debug = False
+
+
+"""
+使用无线网卡进行调试时注意：
+电脑插上无线网卡后（此处使用了360wifi），电脑连接internet的网卡是wan，而无线网卡自然是wlen了，
+似乎，360wifi它设置了wlen内的用户不能访问wan网卡，所以在写服务端和客户端时要特别注意ip地址要
+指定的是wlen的子网内的ip，否则连接不上
+"""
+#是否在电脑上插上360wifi调试
+PCwith360wifiDebug = False
 
 
 def tellfather(str):
@@ -113,16 +122,16 @@ class ImgSender(CvCapture):
         #连接客户端的接收图片的端口
         try:
             self.socket.connect((self.host,self.port))
+            tellfather('I connect successfully to {0}:{1}'.format(self.host,self.port))
         except socket.error: 
-            if debug:
+            if PCwith360wifiDebug:
                 try:
-                    self.socket.connect(('127.0.0.1',self.port))        #本地测试时获取得的是360无线WIFI的IP，被360档了
+                    #电脑测试客户端接收图片的ip是127.0.0.1，而本地命令行服务器获取得到的是360无线WIFI的IP
+                    #两个属于不同的网卡设备，即需要连接到正确的正在监听self.port端口的ip地址：127.0.0.1
+                    self.socket.connect(('127.0.0.1',self.port))        
                 except socket.error:   
-                    try:
-                        self.socket.connect(('202.193.9.83',self.port)) #在小车连接电脑时，获取得的是360无线WIFI的IP，被360档了
-                    except socket.error: 
-                        tellfather('Socket error')
-                        return
+                    tellfather('Socket error')
+                    return                       
             else:
                 tellfather('Socket error')
                 return
@@ -229,7 +238,6 @@ def run():
     host = sys.argv[1] if len(sys.argv)==4 else '127.0.0.1'
     port = sys.argv[2] if len(sys.argv)==4 else '36889'
     mode = sys.argv[3] if len(sys.argv)==4 else '2'   
-    tellfather('Now I am sending Images to {0}:{1}!'.format(host,port))
 
     imgsender = ImgSender(host,port,mode)
     imgsender.startSendFrame(False)
