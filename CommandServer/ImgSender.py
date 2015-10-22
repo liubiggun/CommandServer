@@ -139,35 +139,35 @@ class ImgSender(CvCapture):
         #第一帧
         rs1 = rs2 = False
         frame1 = frame0 = None
-        if self.mode == '0':
-            try:
+        try:
+            if self.mode == '0':
                 self.width,self.height = 320,240
                 self.openCAM(1)
                 self.openCAM(0)        
                 rs1,frame1 = self.capture1.read()
-                rs0,frame0 = self.capture0.read()
-            except Exception:
-                tellfather('Capture error')
-        elif self.mode == '1':
-            try:
+                rs0,frame0 = self.capture0.read() 
+            elif self.mode == '1':
                 self.width,self.height = 640,480
                 self.openCAM(1)
                 rs1,frame1 = self.capture1.read()
-            except Exception:
-                tellfather('Capture error') 
-        elif self.mode == '2':
-            try:
+            elif self.mode == '2':
                 self.width,self.height = 640,480
                 self.openCAM(0)
-                rs0,frame0 = self.capture0.read()     
-            except Exception:
-                tellfather('Capture error')     
+                rs0,frame0 = self.capture0.read() 
+            else:
+                self.mode = '2'
+                self.width,self.height = 640,480
+                self.openCAM(0)
+                rs0,frame0 = self.capture0.read()  
+        except Exception:
+                tellfather('Capture error') 
         
         initsucceeded = ifsucceeded(rs1,rs0)
         if initsucceeded:
             tellfather("Now I'm sending images to {0}:{1}.format(self.host,self.port)")
         else:
             tellfather("Sorry,I can't fetch image.")
+
         #该进程实际工作
         while ifsucceeded(rs1,rs0):                                                        
             with self.mutex:
