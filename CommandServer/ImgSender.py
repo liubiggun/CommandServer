@@ -1,4 +1,5 @@
-﻿"""
+﻿#-*- coding: UTF-8 -*-
+"""
 CommandServer spawn出来的子进程，用来发送摄像头图片给客户端
 """
 
@@ -48,7 +49,8 @@ class ImgSender(CvCapture):
         self.port = int(port)
         self.mode = mode                                                  
         self.order = None                                                 #当前父进程要本子进程执行的命令
-        self.mutex = thread.allocate_lock()                               #锁
+        self.need2change = True  #提示是否要转换模式，若为True，将先转换模式
+        self.mutex = thread.allocate_lock()                               #锁       
 
         self.socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)    #连接要接收图像的客户端的端口
         self.startGetOrder()
@@ -57,73 +59,98 @@ class ImgSender(CvCapture):
         """
         启动一个线程获取主进程的order
         """
-        def getOrder():#生产者
+        def getOrder():#生产者           
             while 1:
-                rs = input()
+                rs = raw_input()    #接收父进程发来的信息
                 with self.mutex:
-                    tellfather('receive from father process:{0}'.format(rs))
+                    #tellfather('receive from father process:{0}'.format(rs))
                     self.order = rs
+
         thread.start_new_thread(getOrder,())
+
+    def nextFrame(self):                              
+        """
+        获取下一帧,ismodechanged提示是否要转换模式，若为True，将先转换模式
+        这里双目时，令大小为320*240，单目时令大小为640*480
+        '0' ==> 1（开） 0（开）
+        '1' ==> 1（开） 0（关）
+        '2' ==> 1（关） 0（开）
+        返回元组，(rs1,rs0,frame1,frame0)
+        """            
+        rs1 = rs0 = False
+        frame1 = frame0 = None
+        try:  
+            if self.need2change:#需要模式转换 
+                self.need2change = False                  #消费掉此次转换命令  
+                self.clean() 
+                if self.mode == '0':
+                    self.fps = 10
+                    self.width,self.height = 320,240
+                    self.openCAM(1)
+                    self.openCAM(0)        
+                    rs1,frame1 = self.capture1.read()
+                    rs0,frame0 = self.capture0.read()                         
+                elif self.mode == '1':
+                    self.fps = 30
+                    self.width,self.height = 640,480
+                    self.openCAM(1)      
+                    rs1,frame1 = self.capture1.read()   
+                    rs0,frame0 = True,None            #不获取也返回True，使得 rs1 & rs0 为True ，以便后续判断 
+                elif self.mode == '2':   
+                    self.fps = 30             
+                    self.width,self.height = 640,480
+                    self.openCAM(0)
+                    rs1,frame1 = True,None
+                    rs0,frame0 = self.capture0.read()            
+                else:
+                    self.mode = '2'
+                    self.fps = 30 
+                    self.width,self.height = 640,480                   
+                    self.openCAM(0)
+                    rs1,frame1 = True,None
+                    rs0,frame0 = self.capture0.read() 
+            else:#直接读取下一帧
+                if self.mode == '0':        
+                    rs1,frame1 = self.capture1.read()
+                    rs0,frame0 = self.capture0.read()                         
+                elif self.mode == '1':    
+                    rs1,frame1 = self.capture1.read()   
+                    rs0,frame0 = True,None            #不获取也返回True，使得 rs1 & rs0 为True ，以便后续判断 
+                elif self.mode == '2':   
+                    rs1,frame1 = True,None
+                    rs0,frame0 = self.capture0.read()                      
+        except Exception:
+                tellfather('Capture error')
+            
+        return (rs1,rs0,frame1,frame0)
+
+    def sendframe(self,frame): 
+        """
+        发送一帧图像
+        """                                                  
+        try:
+            result, imgencode = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY),90])   #编码图像
+            data = numpy.array(imgencode)
+            stringData = data.tostring()                                    #转换为二进制字符串发送
+            stringLenData = str(len(stringData)).ljust(16)
+
+            #等待客户端接收图片的端口发来可以传图片的信号
+            self.socket.recv(1)
+            self.socket.send(stringLenData)                                 #先发送16字节的长度用来给接收端识别图片大小
+            self.socket.send(stringData)                                    #再发送图像数据              
+        except Exception:
+            return False
+        else:
+            return True
 
     def startSendFrame(self,show=False):
         """
         获取视频帧,show:是否弹出窗体显示,flag:获取模式，0 双目 1 左边 2 右边
         """        
-        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY),90]       #视频编码参数
-
-        def fetched(rs1,rs0):                                   #判断获取图像是否成功
-            if self.mode == '0':
-                return rs1 & rs0
-            elif self.mode == '1':
-                return rs1
-            elif self.mode == '2':
-                return rs0
-
-        def changemode(mode):                              #转换模式
-            """
-            这里双目时，令大小为320*240，单目时令大小为640*480
-            '0' ==> 1（开） 0（开）
-            '1' ==> 1（开） 0（关）
-            '2' ==> 1（关） 0（开）
-            """
-            self.clean()
-            self.mode=mode
-            if self.mode=='0':
-                self.fps = 10
-                self.width,self.height=320,240
-                self.openCAM(1)  
-                self.openCAM(0)               
-            elif self.mode=='1':
-                self.fps = 30
-                self.width,self.height=640,480
-                self.openCAM(1)
-            elif self.mode=='2':
-                self.fps = 30
-                self.width,self.height=640,480
-                self.openCAM(0)
-            with self.mutex:
-                logger.info('change mode to {}'.format(self.mode))
-
-        def sendframe(frame):                                                   #发送一帧图像
-            try:
-                result, imgencode = cv2.imencode('.jpg', frame, encode_param)   #编码图像
-                data = numpy.array(imgencode)
-                stringData = data.tostring()                                    #转换为二进制字符串发送
-                stringLenData = str(len(stringData)).ljust(16)
-                self.socket.send(stringLenData)                                 #先发送16字节的长度用来给接收端识别图片大小
-                self.socket.send(stringData)                                    #再发送图像数据
-                if stringData < 1024:
-                    return False
-                else:
-                    return True
-            except Exception:
-                return False
-
-
         #连接客户端的接收图片的端口
         try:
             self.socket.connect((self.host,self.port))
-            tellfather('I connect successfully to {0}:{1}'.format(self.host,self.port))
+            tellfather("I connect successfully.[serve to {0}:{1}.mode:{2}]".format(self.host,self.port,self.mode))
         except socket.error: 
             if PCwith360wifiDebug:
                 try:
@@ -136,58 +163,40 @@ class ImgSender(CvCapture):
             else:
                 tellfather('Socket error')
                 return
-
-        #第一帧
-        rs1 = rs2 = False
-        frame1 = frame0 = None
-        try:           
-            if self.mode == '0':
-                self.fps = 10
-                self.width,self.height = 320,240
-                self.openCAM(1)
-                self.openCAM(0)        
-                rs1,frame1 = self.capture1.read()
-                rs0,frame0 = self.capture0.read() 
-            elif self.mode == '1':
-                self.fps = 30
-                self.width,self.height = 640,480
-                self.openCAM(1)
-                rs1,frame1 = self.capture1.read()
-            elif self.mode == '2':   
-                self.fps = 30             
-                self.width,self.height = 640,480
-                self.openCAM(0)
-                rs0,frame0 = self.capture0.read()                
-            else:
-                self.mode = '2'
-                self.width,self.height = 640,480
-                self.openCAM(0)
-                rs0,frame0 = self.capture0.read()                  
-        except Exception:
-                tellfather('Capture error') 
-         
         
-        #该函数执行于子进程时，使用ifsucceeded函数就死在这了，不懂什么情况
-        #所以只能不调用函数了
-        #succeeded = fetched(rs1,rs0)
-        #tellfather('run here {0}'.format(initsucceeded))
-        if self.mode == '0':
-            succeeded = rs1 & rs0
-        elif self.mode == '1':
-            succeeded = rs1
-        elif self.mode == '2':
-            succeeded = rs0
+        #读取第一帧
+        rs1,rs0,frame1,frame0 = self.nextFrame()
 
-        if succeeded:
-            tellfather("Now I'm sending images to {0}:{1}".format(self.host,self.port))
+        if rs1 & rs0:
+            tellfather("Now I'm sending images.[serve to {0}:{1}.mode:{2}]".format(self.host,self.port,self.mode))
         else:
-            tellfather("Sorry,I can't fetch image.")
+            tellfather("Sorry,I can't fetch image.[serve to {0}:{1}.mode:{2}]".format(self.host,self.port,self.mode))
 
         #该进程实际工作
-        #while fetched(rs1,rs0):
-        while succeeded:  
+        while rs1 & rs0:  
             waittime = int(round(1000 // self.fps * 0.9))   #帧数控制时间，*0.9是为了大概减少一些时间，
                                                             #因为获取图像时有些操作也消耗了时间                                                      
+                     
+            #发送图像，获取下一帧图像，帧数控制(waitKey等待时间)
+            if self.mode == '0':
+                if not self.sendframe(frame1): tellfather('Send error');break
+                cv2.waitKey(waittime/2)
+                if not self.sendframe(frame0): tellfather('Send error');break
+                if show:
+                    cv2.imshow('CAM1',frame1)
+                    cv2.imshow('CAM0',frame0)
+                cv2.waitKey(waittime/2)
+            elif self.mode == '1':
+                if not self.sendframe(frame1): tellfather('Send error');break
+                if show:
+                    cv2.imshow('CAM1',frame1)
+                cv2.waitKey(waittime)
+            elif self.mode == '2':
+                if not self.sendframe(frame0): tellfather('Send error');break
+                if show:
+                    cv2.imshow('CAM0',frame0)
+                cv2.waitKey(waittime)
+
             with self.mutex:
                 if self.order != None:                                  
                     order, self.order = self.order, None                    #消费self.order
@@ -197,46 +206,20 @@ class ImgSender(CvCapture):
                         break    
                     elif order[:4] == 'mode':                               #改变模式命令 
                         try:
-                            changemode(order[5])                            #改变模式
+                            self.mode = order[5]                             #改变模式
+                            self.need2change = True
+                            #tellfather('change mode to {}'.format(self.mode))
                         except Exception:
                             tellfather('Capture error')
                             break
 
-                    
-            #发送图像，获取下一帧图像，帧数控制(waitKey等待时间)
-            if self.mode == '0':
-                if not sendframe(frame1): tellfather('Send error');break
-                cv2.waitKey(waittime/2)
-                if not sendframe(frame0): tellfather('Send error');break
-                if show:
-                    cv2.imshow('CAM1',frame1)
-                    cv2.imshow('CAM0',frame0)
-
-                rs1,frame1 = self.capture1.read()
-                rs0,frame0 = self.capture0.read()
-                succeeded = rs1 & rs0
-                cv2.waitKey(waittime/2)
-            elif self.mode == '1':
-                if not sendframe(frame1): tellfather('Send error');break
-                if show:
-                    cv2.imshow('CAM1',frame1)
-
-                rs1,frame1 = self.capture1.read()
-                succeeded = rs1
-                cv2.waitKey(waittime)
-            elif self.mode == '2':
-                if not sendframe(frame0): tellfather('Send error');break
-                if show:
-                    cv2.imshow('CAM0',frame0)
-
-                rs0,frame0 = self.capture0.read()
-                succeeded = rs0
-                cv2.waitKey(waittime)
+            #读取下一帧
+            rs1,rs0,frame1,frame0 = self.nextFrame()
 
         else:#获取下一帧得到的图像为空则跳出循环，执行到这里，执行break才是正常退出，否则退出异常
             tellfather('Capture error')          #获取图像失败，告诉父进程
         
-        self.clean()                                       #循环结束后清理工作
+        self.clean()                             #循环结束后清理工作
         
 
 def testCVEncode():   

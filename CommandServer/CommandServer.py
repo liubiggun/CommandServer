@@ -217,7 +217,7 @@ class ImgProtocol(ProcessProtocol):
         命令子进程改变传输模式
         """           
         self.flag = flag
-        self.transport.write('mode:{0}'.format(flag))
+        self.transport.write('mode:{0}\n'.format(flag))
 
     def orderExit(self):
         """
