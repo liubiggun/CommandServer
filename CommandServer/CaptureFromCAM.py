@@ -179,8 +179,9 @@ class CvCapture:
         """
         退出前的清理工作
         """
-        self.capture1 and self.capture1.release()
-        self.capture0 and self.capture0.release()
+        self.capture1 is not None and self.capture1.release()
+        self.capture0 is not None and self.capture0.release()
+        self.capture1 = self.capture0 = None
         cv2.destroyAllWindows()
 
 if __name__ == '__main__':

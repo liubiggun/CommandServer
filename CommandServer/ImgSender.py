@@ -15,6 +15,13 @@ import logging.config
 logging.config.fileConfig('spawnlog.conf')
 logger = logging.getLogger('spawn') 
 
+def tellfather(str):
+    """
+    发送信息给父进程
+    """
+    sys.stdout.write(str)
+    sys.stdout.flush()
+
 class ImgSender(CvCapture):
     """
     发送图像类，在一个子进程调用它，并且该进程的标准输入输出被重定向到管道，与主进程的某个管道连接
@@ -43,7 +50,7 @@ class ImgSender(CvCapture):
             while 1:
                 rs = input()
                 with self.mutex:
-                    logger.info('receive from father process:{0}'.format(rs))
+                    tellfather('receive from father process:{0}'.format(rs))
                     self.order = rs
         thread.start_new_thread(getOrder,())
 
@@ -105,7 +112,7 @@ class ImgSender(CvCapture):
             try:
                 self.socket.connect(('127.0.0.1',self.port))      #本地测试时获取得的是360无线WIFI的IP，被360档了
             except socket.error:       
-                sys.stdout.write('Socket error')
+                tellfather('Socket error')
                 return
 
         #第一帧
@@ -119,21 +126,21 @@ class ImgSender(CvCapture):
                 rs1,frame1 = self.capture1.read()
                 rs0,frame0 = self.capture0.read()
             except Exception:
-                sys.stdout.write('Capture error')
+                tellfather('Capture error')
         elif self.mode == '1':
             try:
                 self.width,self.height = 640,480
                 self.openCAM(1)
                 rs1,frame1 = self.capture1.read()
             except Exception:
-                sys.stdout.write('Capture error') 
+                tellfather('Capture error') 
         elif self.mode == '2':
             try:
                 self.width,self.height = 640,480
                 self.openCAM(0)
                 rs0,frame0 = self.capture0.read()     
             except Exception:
-                sys.stdout.write('Capture error')     
+                tellfather('Capture error')     
 
         #该进程实际工作
         while ifsuceeded(rs1,rs0):                                                        
@@ -142,21 +149,21 @@ class ImgSender(CvCapture):
                     order, self.order = self.order, None                    #消费self.order
                                                                             #执行命令
                     if order == 'stop':                                     #退出命令
-                        sys.stdout.write('Normal exit')                     #告诉父进程本子进程正常退出
+                        tellfather('Normal exit')                     #告诉父进程本子进程正常退出
                         break    
-                    elif order[:3] == 'mode':                               #改变模式命令 
+                    elif order[:4] == 'mode':                               #改变模式命令 
                         try:
-                            changemode(order[6])                            #改变模式
+                            changemode(order[5])                            #改变模式
                         except Exception:
-                            sys.stdout.write('Capture error')
+                            tellfather('Capture error')
                             break
 
                     
             #发送图像，获取下一帧图像，帧数控制(waitKey等待时间)
             if self.mode == '0':
-                if not sendframe(frame1): sys.stdout.write('Send error');break
+                if not sendframe(frame1): tellfather('Send error');break
                 cv2.waitKey(waittime/2)
-                if not sendframe(frame0): sys.stdout.write('Send error');break
+                if not sendframe(frame0): tellfather('Send error');break
                 if show:
                     cv2.imshow('CAM1',frame1)
                     cv2.imshow('CAM0',frame0)
@@ -165,14 +172,14 @@ class ImgSender(CvCapture):
                 rs0,frame0 = self.capture0.read()
                 cv2.waitKey(waittime/2)
             elif self.mode == '1':
-                if not sendframe(frame1): sys.stdout.write('Send error');break
+                if not sendframe(frame1): tellfather('Send error');break
                 if show:
                     cv2.imshow('CAM1',frame1)
 
                 rs1,frame1 = self.capture1.read()
                 cv2.waitKey(waittime)
             elif self.mode == '2':
-                if not sendframe(frame0): sys.stdout.write('Send error');break
+                if not sendframe(frame0): tellfather('Send error');break
                 if show:
                     cv2.imshow('CAM0',frame0)
 
@@ -180,7 +187,7 @@ class ImgSender(CvCapture):
                 cv2.waitKey(waittime)
 
         else:#获取下一帧得到的图像为空则跳出循环，执行到这里，执行break才是正常退出，否则退出异常
-            sys.stdout.write('Capture error')          #获取图像失败，告诉父进程
+            tellfather('Capture error')          #获取图像失败，告诉父进程
         
         self.clean()                                       #循环结束后清理工作
         
@@ -209,9 +216,9 @@ def testCVEncode():
 def run():                                                 
     host = sys.argv[1] if len(sys.argv)==4 else '127.0.0.1'
     port = sys.argv[2] if len(sys.argv)==4 else '36889'
-    mode = sys.argv[3] if len(sys.argv)==4 else '2'
-    #print host,port,mode
-    #print('Now spawn process is sending Images to {0}:{1}!'.format(host,port))
+    mode = sys.argv[3] if len(sys.argv)==4 else '2'   
+    tellfather('Now I am sending Images to {0}:{1}!'.format(host,port))
+
     imgsender = ImgSender(host,port,mode)
     imgsender.startSendFrame(False)
     

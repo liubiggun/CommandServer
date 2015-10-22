@@ -34,7 +34,7 @@ class SerialHandle:
         """
         线程中等待下位机返回数据，返回若是''空字符串，说明下位机没有正确响应命令
         """              
-        rs=self.ser.readline()
+        rs=self.ser.readline()          #阻塞方法，可以考虑执行在thread中
 
         return rs
 

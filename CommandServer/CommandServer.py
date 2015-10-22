@@ -299,7 +299,7 @@ class CmdService(object):
         启动图像服务进程，spawn一个子进程专门处理发送图像给客户端host的port端口
         """        
         self.reactor.spawnProcess(imgprotocol, self.pypath, 
-                                  [self.pypath, 'ImgSender.py', host, port, mode], {})    #启动子进程并建立与子进程的通信
+                                  [self.pypath, 'ImgSender.py', host, port, mode])    #启动子进程并建立与子进程的通信
 
     def xform_StopImgSender(self, imgprotocol):
         """
