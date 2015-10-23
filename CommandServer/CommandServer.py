@@ -1,4 +1,5 @@
-﻿"""
+﻿#-*- coding: UTF-8 -*-
+"""
 twisted框架的小车命令服务器，协议使用LineOnlyReceiver，一个TCP端口监听客户端传来的命令，
 本进程作为主进程，子进程是图片传输进程。本进程的管道与子进程的标准输入输出相连接，以达到控
 制子进程的目的。
@@ -24,7 +25,12 @@ logger = logging.getLogger('main')
 lineprint = '\n' + '-' * 60 + '\n'
 
 def crucialprint(str):
-    print(lineprint + str + lineprint[:-1])
+    if str[-2:]=='\r\n':
+        print(lineprint + str[:-2] + lineprint[:-1])
+    elif str[:-1]=='\n':
+        print(lineprint + str[:-1] + lineprint[:-1])
+    else:
+        print(lineprint + str + lineprint[:-1])
 
 class CmdProtocol(LineOnlyReceiver):
     """
@@ -91,12 +97,13 @@ class CmdProtocol(LineOnlyReceiver):
             """
             控制图像传输
             """  
-            dataparts = self.factory.service.cmdHandler.dataParts                      #['客户端接收图像端口';'flag']
+            dataparts = self.factory.service.cmdHandler.dataParts                      #['客户端接收图像端口';'mode'] or
+                                                                                       #['要改变的fps';'要改变的mode']
             if dataparts[1] == '?':                                                    #数据为?说明查询当前传输图像子进程状态
-                self.transport.write(self.subprocessProtocol.flag)
+                self.transport.write('[{0.mode};{0.fps}]'.format(self.subprocessProtocol))
 
             elif dataparts[1] in ['^','&','*']:                                        #数据为^说明启动子进程
-                if self.subprocessProtocol.flag == '$':                                #当前没有传输子进程才可以启动
+                if self.subprocessProtocol.mode == '$':                                #当前没有传输子进程才可以启动
                     mode = str(['^','&','*'].index(dataparts[1]))
                     self.subprocessProtocol = ImgProtocol(self.transport.getPeer().host,dataparts[0],self.user,mode)
                     self.factory.service.runService("SpawnImgSender",self.subprocessProtocol,
@@ -105,17 +112,18 @@ class CmdProtocol(LineOnlyReceiver):
                     self.transport.write('Spawn process Exist!')  
                                     
             elif dataparts[1] == '$':                                                  #数据为$说明结束子进程
-                if self.subprocessProtocol.flag != '$':                                #如果子进程还存在
+                if self.subprocessProtocol.mode != '$':                                #如果子进程还存在
                     self.factory.service.runService("StopImgSender",self.subprocessProtocol)  #人为控制子进程退出
                 else:
                     self.transport.write('No spawn process!')
 
-            elif dataparts[1] in ['0','1','2']:                                        #数据为0 1 2说明改变获取图像flag
-                if self.subprocessProtocol.flag != '$':
-                    if self.subprocessProtocol.flag != dataparts[1]:                   #不同才需要更改模式
-                        crucialprint('Change mode of spawn process which connect to {0.host}:{0.port} to : {1}'.format(
-                            self.transport.getPeer(),dataparts[1]))              
-                        self.factory.service.runService("ConfigImgSender",self.subprocessProtocol,dataparts[1])
+            elif dataparts[1] in ['0','1','2']:                                        #数据为0 1 2说明改变获取图像传输mode
+                if self.subprocessProtocol.mode != '$':
+                    if self.subprocessProtocol.fps != dataparts[0] or self.subprocessProtocol.mode != dataparts[1]:
+                        #不同才需要更改模式
+                        crucialprint('Change mode of spawn process(serve to {0.host}:{0.port}) to mode:{1};fps:{2}'.
+                                     format(self.transport.getPeer(),dataparts[1],dataparts[0]))              
+                        self.factory.service.runService("ConfigImgSender",self.subprocessProtocol,dataparts[0],dataparts[1])
                     else:
                         self.transport.write('Nothing change!')
                 else:
@@ -186,7 +194,7 @@ class CmdProtocol(LineOnlyReceiver):
             deferred, self.deferred = self.deferred, None
             deferred.cancel()                                                           #服务取消
 
-        if self.subprocessProtocol and self.subprocessProtocol.flag != '$':
+        if self.subprocessProtocol and self.subprocessProtocol.mode != '$':
             self.subprocessProtocol.orderExit()                                         #命令子进程退出
 
         if CmdProtocol.hasmaster and self.user == 'master':       #若本次连接登陆的是master，退出时清空hasmaster标记
@@ -199,11 +207,12 @@ class ImgProtocol(ProcessProtocol):
     """
     exitMode=['Normal exit', 'Socket error', 'Send error', 'Capture error']
 
-    def __init__(self, host, port, user, flag):
+    def __init__(self, host, port, user, mode):
         self.host = host
         self.port = port
         self.user = user
-        self.flag = flag
+        self.mode = mode
+        self.fps = '0'
         self.exitstatus = 'Normal exit'
 
     def connectionMade(self):
@@ -212,12 +221,12 @@ class ImgProtocol(ProcessProtocol):
         """   
         crucialprint('Spawn process for {0}:{1} (user:{2}) has started!'.format(self.host,self.port,self.user))
 
-    def changeMode(self, flag):
+    def changeMode(self, fps, mode):
         """
         命令子进程改变传输模式
-        """           
-        self.flag = flag
-        self.transport.write('mode:{0}\n'.format(flag))
+        """     
+        self.transport.write('mode:{0};fps:{1}'.format(mode,fps))
+        crucialprint("send 'mode:{0};fps:{1}' to spawn process".format(mode,fps))
 
     def orderExit(self):
         """
@@ -227,16 +236,19 @@ class ImgProtocol(ProcessProtocol):
 
     def outReceived(self, data):
         """
-        接收到子进程的标准输出，根据其输出，改变子进程退出状态
+        接收到子进程的标准输出
         """
-        crucialprint('Spawn process send: {0}'.format(data))
-        if data in ImgProtocol.exitMode:
-            self.exitstatus = data
+        crucialprint('Spawn process send: {0}'.format(data))         
 
     def errReceived(self, data):
         """
-        接收到子进程的标准错误输出
-        """              
+        接收到子进程的标准错误输出，获取其重要信息或错误信息，根据其输出，改变子进程退出状态显示
+        """ 
+        if data.find('mode') > -1 and data.find('fps') > -1:            #子进程告知已经更改模式成功，'mode:0;fps:30'
+            mstr,fstr = data.split(';')
+            self.mode,self.fps = mstr.split(':')[1],fstr.split(':')[1]
+        if data in ImgProtocol.exitMode:
+            self.exitstatus = data             
 
     def processEnded(self, reason):
         """
@@ -244,7 +256,8 @@ class ImgProtocol(ProcessProtocol):
         """
         crucialprint('Spawn process for {0}:{1} (user:{2}) has exited : {3}!'.format(self.host, self.port,
                                                                                      self.user, self.exitstatus))
-        self.flag = '$'#标志位结束标志
+        self.mode = '$'#标志位结束标志
+        self.fps = '0'
 
              
 class CmdFactory(ServerFactory):
@@ -307,11 +320,11 @@ class CmdService(object):
         """
         imgprotocol.orderExit()
 
-    def xform_ConfigImgSender(self, imgprotocol, flag):
+    def xform_ConfigImgSender(self, imgprotocol, fps, mode):
         """
-        设置图像传输服务，flag指明图像类型（0是获取双目数据，1是左边摄像头，2则右边）
+        设置图像传输服务，fps帧数 ,mode指明图像类型（0是获取双目数据，1是左边摄像头，2则右边）
         """
-        imgprotocol.changeMode(flag)
+        imgprotocol.changeMode(fps,mode)
 
     def xform_ExecuteCmds(self):
         """
