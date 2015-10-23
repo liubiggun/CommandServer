@@ -225,8 +225,8 @@ class ImgProtocol(ProcessProtocol):
         """
         命令子进程改变传输模式
         """     
-        self.transport.write('mode:{0};fps:{1}'.format(mode,fps))
-        crucialprint("send 'mode:{0};fps:{1}' to spawn process".format(mode,fps))
+        self.transport.write('mode:{0};fps:{1}\n'.format(mode,fps))
+        #crucialprint("send 'mode:{0};fps:{1}' to spawn process".format(mode,fps))
 
     def orderExit(self):
         """
@@ -238,17 +238,18 @@ class ImgProtocol(ProcessProtocol):
         """
         接收到子进程的标准输出
         """
-        crucialprint('Spawn process send: {0}'.format(data))         
+        crucialprint('Spawn process stdout: {0}'.format(data)) 
 
     def errReceived(self, data):
         """
         接收到子进程的标准错误输出，获取其重要信息或错误信息，根据其输出，改变子进程退出状态显示
         """ 
+        crucialprint('Spawn process stderr: {0}'.format(data))
         if data.find('mode') > -1 and data.find('fps') > -1:            #子进程告知已经更改模式成功，'mode:0;fps:30'
             mstr,fstr = data.split(';')
             self.mode,self.fps = mstr.split(':')[1],fstr.split(':')[1]
         if data in ImgProtocol.exitMode:
-            self.exitstatus = data             
+            self.exitstatus = data                   
 
     def processEnded(self, reason):
         """

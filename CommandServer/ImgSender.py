@@ -10,12 +10,6 @@ import time
 import thread
 import cv2
 import numpy
-import logging
-import logging.config
-
-logging.config.fileConfig('spawnlog.conf')
-logger = logging.getLogger('spawn') 
-
 
 """
 使用无线网卡进行调试时注意：
@@ -26,6 +20,7 @@ logger = logging.getLogger('spawn')
 #是否在电脑上插上360wifi调试
 PCwith360wifiDebug = False
 
+mutex = thread.allocate_lock() 
 
 def tellfather(str):
     """
@@ -56,19 +51,19 @@ class ImgSender(CvCapture):
         self.port = int(port)
         self.mode = mode                                                  
         self.order = None                                                 #当前父进程要本子进程执行的命令
-        self.need2change = True  #提示是否要转换模式，若为True，将先转换模式
-        self.mutex = thread.allocate_lock()                               #锁       
+        self.need2change = True  #提示是否要转换模式，若为True，将先转换模式     
 
         self.socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)    #连接要接收图像的客户端的端口
 
     def getOrder(self):
         """
-        获取主进程的order
+        获取主进程的order，#接收父进程发来的信息
         """         
         while 1:
-            rs = raw_input()    #接收父进程发来的信息     !这里老是出问题，接收不到父进程发来的命令
-            with self.mutex:
-                self.order = rs
+            #rs = raw_input()         !这里老是出问题，接收不到父进程发来的命令
+            rs = sys.stdin.readline()
+            with mutex:
+                self.order = rs.strip()
 
     def montage(self,frame1,frame0):
         """
@@ -117,7 +112,7 @@ class ImgSender(CvCapture):
                     self.openCAM(0)
                     rs1,frame1 = True,None
                     rs0,frame0 = self.capture0.read() 
-                alertfather('mode:{0};fps:{1}'.format(self.mode,self.fps))   #告知父进程，修改成功
+                alertfather('mode:{0};fps:{1}'.format(self.mode,self.fps))   #告知父进程，修改成功                            
             else:#直接读取下一帧
                 if self.mode == '0':        
                     rs1,frame1 = self.capture1.read()
@@ -187,9 +182,9 @@ class ImgSender(CvCapture):
 
         #该进程实际工作
         while rs1 & rs0:  
-            waittime = int(round(1000 // self.fps * 0.9))   #帧数控制时间，*0.9是为了大概减少一些时间，
-                                                            #因为获取图像时有些操作也消耗了时间                                                      
-                     
+            waittime = 1.0 / int(self.fps) * 0.9           #帧数控制时间，*0.9是为了大概减少一些时间，
+                                                           #因为获取图像时有些操作也消耗了时间                                                      
+            tellfather(waittime.__str__())      
             #发送图像，获取下一帧图像，帧数控制(waitKey等待时间)
             if self.mode == '0':
 
@@ -209,23 +204,24 @@ class ImgSender(CvCapture):
                     cv2.imshow('CAM0',frame0)
 
 
-            with self.mutex:
-                if self.order != None:                                  
-                    order, self.order = self.order, None                    #消费self.order
-                                                                            #执行命令
+            with mutex:               
+                if self.order != None:                                                    
+                    order, self.order = self.order, None                    #消费self.order,执行命令
+                                                                            
+                    tellfather('order:{0} {1}'.format(len('mode:0;fps:30'),len(order))) 
                     if order == 'stop':                                     #退出命令
                         alertfather('Normal exit')                     #告诉父进程本子进程正常退出
                         break    
-                    elif order[:4] == 'mode':                               #改变模式命令 'mode:0;fps:30'
-                        try:
-                            self.mode = order[5]                            #改变模式
-                            self.fps = order.split(':')[-1]                 #改变fps
-                            self.need2change = True                           
+                    elif order.find('mode') > -1 and order.find('fps') > -1:  #改变模式命令 'mode:0;fps:30'                                                    
+                        try:                            
+                            mstr,fstr = order.split(';')
+                            self.mode,self.fps = mstr.split(':')[1],fstr.split(':')[1]  #改变模式,改变fps
+                            self.need2change = True                                                     
                         except Exception:
                             alertfather('Capture error')
                             break
             #帧数控制
-            cv2.waitKey(waittime)
+            time.sleep(waittime)
             #读取下一帧
             rs1,rs0,frame1,frame0 = self.nextFrame()
 

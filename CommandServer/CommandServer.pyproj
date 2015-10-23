@@ -44,9 +44,6 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="spawnlog.conf">
-      <SubType>Code</SubType>
-    </Content>
     <Content Include="mainlog.conf">
       <SubType>Code</SubType>
     </Content>
