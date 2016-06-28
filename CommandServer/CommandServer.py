@@ -199,6 +199,8 @@ class CmdProtocol(LineOnlyReceiver):
 
         if CmdProtocol.hasmaster and self.user == 'master':       #若本次连接登陆的是master，退出时清空hasmaster标记
             CmdProtocol.hasmaster = False
+        if self.user == 'guess':
+            CmdProtocol.guessnum-=1
 
 
 class ImgProtocol(ProcessProtocol):
